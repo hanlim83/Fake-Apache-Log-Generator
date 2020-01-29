@@ -107,17 +107,21 @@ while (flag):
     ip = faker.ipv4()
     dt = otime.strftime('%d/%b/%Y:%H:%M:%S')
     tz = datetime.datetime.now(local).strftime('%z')
-    vrb = numpy.random.choice(verb, p=[0.6, 0.1, 0.1, 0.2])
 
     if include_login == "FALSE":
         uri = random.choice(resourcesWL)
         if uri.find("apps") > 0:
             uri += str(random.randint(1000, 10000))
+        vrb = numpy.random.choice(verb, p=[0.6, 0.1, 0.1, 0.2])
     elif include_login == "TRUE":
         user = random.choice(users)
         uri = random.choice(resourcesL)
         if uri.find("apps") > 0:
             uri += str(random.randint(1000, 10000))
+        if uri == "/login_success":
+            vrb = "GET"
+        else:
+            vrb = numpy.random.choice(verb, p=[0.6, 0.1, 0.1, 0.2])
 
     resp = numpy.random.choice(response, p=[0.9, 0.04, 0.02, 0.04])
     byt = int(random.gauss(5000, 50))
