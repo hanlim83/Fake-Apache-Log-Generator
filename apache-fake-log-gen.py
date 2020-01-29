@@ -11,13 +11,140 @@ import argparse
 from faker import Faker
 from random import randrange
 from tzlocal import get_localzone
+import socket
+import struct
+import gzip as gz
+import numpy as np
+
+# Script Parameters
+ASN_FILE = "ip2asn-v4-u32.tsv.gz"
+# p_travel hyperparamters
+P_TRAVEL_ALPHA = 1
+P_TRAVEL_BETA = 30
+# p_home hyperparamters
+P_HOME_ALPHA = 3
+P_HOME_BETA = 5
+# Num events per user
+NUM_EVENTS_PARETO_A = 1
+NUM_EVENTS_PARETO_LOC = 1
+NUM_EVENTS_PARETO_SCALE = 50
+MAX_NUM_OF_EVENTS = 10000
+# Home work proximity
+HOME_WORK_DISTANCE_UNIFORM_WINDOW = 50000
+# Not just pick IP from home/work network, but perhaps few others around them
+HOME_WORK_LOCALITY_WINDOW_SIGMA = 10
+
+
+def ip2int(ip):
+    """Convert an IP string to long"""
+    packed_ip = socket.inet_aton(ip)
+    return struct.unpack("!I", packed_ip)[0]
+
+
+def load_asn_list(file_name=ASN_FILE):
+    """Load and return Autonomous Systems and corresponding IP Ranges."""
+    asn_list = []
+    with gz.open(file_name, 'r') as f:
+        for ln in f:
+            tks = ln.strip().split()
+            cur_asn = {
+                "begin": int(tks[0]),
+                "end": int(tks[1]),
+                "asn": tks[2],
+                "country": tks[3]
+            }
+            asn_list.append(cur_asn)
+
+    return asn_list
+
+
+# Load ASN list into memory
+global asn_list
+asn_list = load_asn_list()
+print("Loaded ASN List: {} ASNs.".format(len(asn_list)))
+
+
+def int2ip(n):
+    """Convert an long to IP string."""
+    packet_ip = struct.pack("!I", n)
+    return socket.inet_ntoa(packet_ip)
+
+
+def draw_ip_from_asn(asn):
+    """Draw an IP address from given ASN uniform at random."""
+    ip_address_int = np.random.randint(low=asn["begin"], high=asn["end"] + 1)
+    return int2ip(ip_address_int)
+
+
+def draw_ip():
+    """Draw a random IP address from random ASN all uniform at random."""
+    asn = np.random.randint(len(asn_list))
+    return draw_ip_from_asn(asn_list[asn])
+
+
+def draw_user_ip(home_asn, work_asn, p_travel, p_home):
+    """Draw IP address from user's distributed defined by input parameters.
+
+    When drawing an IP address for a login event, we first draw whether a user
+        is 'traveling' or not. If they are traveling, we assign them a
+        random ASN to connect to.
+
+    If they are not traveling, we then draw whether or not the user is at home
+        or at work that day. We assume the user travels within a viscinity of
+        their home/work. Thus, we draw an IP address from within a radius around
+        their home/work radius.
+
+    Once we have the ASN a user is using for this access, we uniformly sample
+        from the ASN's IP range for the assigned IP address.
+
+    :param home_asn: (int) the ASN idx corresponding to the user's home.
+    :param work_asn: (int) the ASN idx corresponding to the user's work.
+    :param p_travel: (float) the probability that the user is traveling.
+    :param p_home: (float) the probability that the user is at home versus work.
+    :return (string) an IPv4 address in dot-notation.
+    """
+    # If user is traveling, pick a random ASN
+    if np.random.rand() < p_travel:
+        cur_asn = np.random.randint(len(asn_list))
+    else:
+        # User is at home or at work
+        home_or_work = home_asn if np.random.rand() < p_home else work_asn
+
+        # Assume user travels locally around work or home
+        cur_asn = np.random.normal(
+            loc=home_or_work,
+            scale=HOME_WORK_LOCALITY_WINDOW_SIGMA)
+        cur_asn = int(cur_asn) % len(asn_list)
+
+    cur_ip = draw_ip_from_asn(asn_list[cur_asn])
+    return cur_ip
+
+
+def generate_user_asns(num_asn, home_work_distance_uniform_window=HOME_WORK_DISTANCE_UNIFORM_WINDOW):
+    """Generate home and work ASN ids for a user.
+
+    We assume each user to be associated with two different ASNs:
+        - one associated with their 'home' network and
+        - one associated with their 'work' network.
+
+    :param num_asn: (int) the number of ASNs to draw from
+    :param home_work_distance_uniform_window: (int) the max distance between
+        an individual's home and work
+    :return (tuple[int]) the user's home and work ASN idx
+    """
+    home = np.random.randint(num_asn)
+
+    work = home
+    while work == home:
+        work_low = home - home_work_distance_uniform_window
+        work_high = home + home_work_distance_uniform_window
+        work = np.random.randint(low=work_low, high=work_high)
+        work = work % num_asn
+
+    return home, work
+
 
 local = get_localzone()
-
-
-# todo:
-# allow writing different patterns (Common Log, Apache Error log etc)
-# log rotation
 
 
 class switch(object):
@@ -96,6 +223,23 @@ users = ["Elise", "Matthew", "Milton", "Samantha", "Kate", "Natalie", "Crystal",
 
 ualist = [faker.firefox, faker.chrome, faker.safari, faker.internet_explorer, faker.opera]
 
+# Select an ASN for the user's home and work network
+home, work = generate_user_asns(len(asn_list))
+
+# Sample how active the user is based on a Pareto distribution
+num_events = int(
+    NUM_EVENTS_PARETO_SCALE *
+    (np.random.pareto(NUM_EVENTS_PARETO_A) + NUM_EVENTS_PARETO_LOC)
+)
+num_events = min(log_lines, num_events)
+
+# Sample traveling probability for this user
+p_travel = np.random.beta(P_TRAVEL_ALPHA, P_TRAVEL_BETA)
+
+# Sample staying home probability for this user.
+# If not travelling, user is either at home or work
+p_home = np.random.beta(P_HOME_ALPHA, P_HOME_BETA)
+
 flag = True
 while (flag):
     if args.sleep:
@@ -104,7 +248,7 @@ while (flag):
         increment = datetime.timedelta(seconds=random.randint(30, 300))
     otime += increment
 
-    ip = faker.ipv4()
+    ip = draw_user_ip(home, work, p_travel, p_home)
     dt = otime.strftime('%d/%b/%Y:%H:%M:%S')
     tz = datetime.datetime.now(local).strftime('%z')
 
