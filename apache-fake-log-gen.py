@@ -84,10 +84,12 @@ response = ["200", "404", "500", "301"]
 verb = ["GET", "POST", "DELETE", "PUT"]
 
 resourcesWL = ["/list", "/wp-content", "/wp-admin", "/explore", "/search/tag/list", "/app/main/posts",
-               "/posts/posts/explore", "/apps/cart.jsp?appID="]
+               "/posts/posts/explore", "/apps/cart.jsp?appID=", "/about-us", "/support", "/catalyst", "/dashboard",
+               "/contact-us"]
 
 resourcesL = ["/list", "/wp-content", "/wp-admin", "/explore", "/search/tag/list", "/app/main/posts",
-              "/posts/posts/explore", "/apps/cart.jsp?appID=", "/login_success"]
+              "/posts/posts/explore", "/apps/cart.jsp?appID=", "/about-us", "/support", "/catalyst", "/dashboard",
+              "/contact-us", "/login_success"]
 
 users = ["Elise", "Matthew", "Milton", "Samantha", "Kate", "Natalie", "Crystal", "Thea", "Keith", "Ian", "Lance",
          "Marcus"]
